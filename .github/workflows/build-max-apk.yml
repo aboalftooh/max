@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'Max-*.zip'
+      - 'firebase/google-services.json'
       - '.github/workflows/build-max-apk.yml'
   workflow_dispatch:
 
@@ -64,12 +65,8 @@ jobs:
               p.write_text(s)
           PY
 
-          if [ -f google-services.json ]; then
-            cp google-services.json app/google-services.json
-          elif [ ! -f app/google-services.json ]; then
-            echo "google-services.json missing" >&2
-            exit 1
-          fi
+          test -s "$GITHUB_WORKSPACE/firebase/google-services.json"
+          cp "$GITHUB_WORKSPACE/firebase/google-services.json" app/google-services.json
 
       - name: Verify client configuration
         shell: bash
@@ -89,7 +86,6 @@ jobs:
           print('Supabase BuildConfig fields: SET')
           PY
 
-          test -s app/google-services.json
           APP_ID=$(grep -RhoE 'applicationId[[:space:]]*=?[[:space:]]*"[^"]+"' app --include='*.gradle' --include='*.gradle.kts' | head -n1 | sed -E 's/.*"([^"]+)"/\1/')
           python3 - "$APP_ID" <<'PY'
           import json,sys
@@ -100,7 +96,8 @@ jobs:
           print('Firebase file: PRESENT')
           print('Application ID:', app_id)
           print('Firebase package match:', 'MATCH' if app_id in pkgs else 'MISMATCH')
-          print('Firebase registered packages:', ', '.join(x for x in pkgs if x))
+          if app_id not in pkgs:
+              raise SystemExit('Firebase package mismatch')
           PY
 
       - name: Build debug APK
@@ -109,7 +106,7 @@ jobs:
           set -euo pipefail
           cd "$PROJECT_DIR"
           ./gradlew :app:assembleDebug --no-daemon --stacktrace
-          GEN=$(find app/build/generated -type f -name BuildConfig.java -o -name BuildConfig.kt 2>/dev/null | head -n1 || true)
+          GEN=$(find app/build/generated -type f \( -name BuildConfig.java -o -name BuildConfig.kt \) 2>/dev/null | head -n1 || true)
           if [ -n "$GEN" ]; then
             grep -q 'SUPABASE_URL' "$GEN"
             grep -q 'SUPABASE_PUBLISHABLE_KEY' "$GEN"
@@ -121,14 +118,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p apk-out
-          find "$PROJECT_DIR" -type f -path '*/build/outputs/apk/debug/*.apk' -exec cp {} apk-out/max-debug.apk \;
-          test -s apk-out/max-debug.apk
-          sha256sum apk-out/max-debug.apk
+          find "$PROJECT_DIR" -type f -path '*/build/outputs/apk/debug/*.apk' -exec cp {} apk-out/Max-v70-debug.apk \;
+          test -s apk-out/Max-v70-debug.apk
+          sha256sum apk-out/Max-v70-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: max-debug-apk
-          path: apk-out/max-debug.apk
+          name: Max-v70-debug-apk
+          path: apk-out/Max-v70-debug.apk
           if-no-files-found: error
           retention-days: 7
